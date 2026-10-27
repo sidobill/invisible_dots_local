@@ -858,6 +858,10 @@ class OpenAICompatProvider(LLMProvider):
         the model per request has no providers listed, so its limits are unknown and its requests go anywhere. A
         model OpenRouter does not know is an error: a request for it would fail too.
         """
+        # LOCAL MODEL (fork patch): a local server (Ollama) has no /models/{id}/endpoints listing; its window is the
+        # one Ollama is started with (OLLAMA_CONTEXT_LENGTH, set by local-model.ps1 to the same 32768).
+        if self._is_local:
+            return ModelLimits(context_tokens=32768, answer_tokens=4096)
         client = await self._ensure_client()
         try:
             listing = cast(dict[str, Any], await client.get(f"/models/{model}/endpoints", cast_to=object))
@@ -927,6 +931,9 @@ class OpenAICompatProvider(LLMProvider):
             if not completed:
                 raise ConnectionError("Model stream ended before a finish reason was received")
             response = self._parse_chunks(chunks)
+            # LOCAL MODEL (fork patch): a local server bills nothing and reports no cost; it is free, not unknown.
+            if self._is_local and response.cost_usd is None:
+                response.cost_usd = 0.0
             usage = response.usage
             if usage is not None and usage.input_tokens > 0 and usage.estimated_tokens == 0:
                 self._prompt_counts.observe(model or self.default_model, messages, tools, usage.input_tokens)

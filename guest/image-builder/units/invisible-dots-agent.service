@@ -30,6 +30,10 @@ Environment=INVISIBLE_DOTS_AGENT_SOCKET=/run/invisible-dots-agent/agent.sock
 Environment=INVISIBLE_DOTS_AGENTD_SOCKET=/run/invisible-dots/agentd.sock
 Environment=INVISIBLE_DOTS_AGENTD_BIN=/opt/invisible-dots/bin/dot-agentd
 Environment=INVISIBLE_DOTS_WORKSPACE=/home/dot/workspace
+# LOCAL MODEL (fork patch): the model is an OpenAI-compatible server on the host (Ollama), reached through QEMU's
+# user-mode gateway 10.0.2.2, which is the host's own loopback. The network check targets the same endpoint.
+Environment=INVISIBLE_DOTS_OPENROUTER_URL=http://10.0.2.2:11434/v1
+Environment=INVISIBLE_DOTS_NETWORK_CHECK=10.0.2.2:11434
 # The engine needs no privilege at all now that its config lives in its own
 # database: no sudo rule, and nothing it starts can gain any.
 NoNewPrivileges=yes

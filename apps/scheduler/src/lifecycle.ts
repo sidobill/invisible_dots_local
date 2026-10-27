@@ -377,7 +377,9 @@ export class Lifecycle {
    * config, and after an agent restart.
    */
   async #push(dotId: string, guest: GuestApi): Promise<void> {
-    const key = await this.#db.secrets.openRouterKey(dotId);
+    // LOCAL MODEL (fork patch): with INVISIBLE_DOTS_LOCAL_MODEL=1 the guest talks to a local server that checks no key,
+    // so a stored key is not required; the engine only needs a non-empty printable value.
+    const key = (await this.#db.secrets.openRouterKey(dotId)) ?? (process.env.INVISIBLE_DOTS_LOCAL_MODEL === "1" ? "local" : null);
     if (!key) throw new NotReadyError(dotId, `${MISSING_KEY_MESSAGE}; set one with PUT /api/secrets/openrouter`);
     const dot = await this.#db.dots.get(dotId);
     if (!dot) throw new ControlPlaneError(404, "not_found", `Dot ${dotId} not found`);
