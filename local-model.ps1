@@ -1,8 +1,11 @@
 # Runs invisible_dots with a local model (Ollama) instead of OpenRouter.
-# Use:  powershell -ExecutionPolicy Bypass -File .\local-model.ps1 [model]    (default model: qwen3:8b)
+# Use:  powershell -ExecutionPolicy Bypass -File .\local-model.ps1 [model] [context]
+#   default: qwen3:8b with 40960 tokens (the most qwen3:8b supports)
+#   example: .\local-model.ps1 llama3.1:8b 65536
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 $model = if ($args.Count -gt 0) { $args[0] } else { "qwen3:8b" }
+$context = if ($args.Count -gt 1) { $args[1] } else { "40960" }
 
 $ollama = (Get-Command ollama -ErrorAction SilentlyContinue).Source
 if (-not $ollama) { $ollama = Join-Path $env:LOCALAPPDATA "Programs\Ollama\ollama.exe" }
@@ -12,11 +15,14 @@ if (-not (Test-Path $ollama)) {
   if (-not (Test-Path $ollama)) { throw "ollama.exe not found; open a new terminal and run again" }
 }
 
-# The Dot's prompt is large: Ollama's default window is too small. 32768 matches the engine patch.
-[Environment]::SetEnvironmentVariable("OLLAMA_CONTEXT_LENGTH", "32768", "User")
-$env:OLLAMA_CONTEXT_LENGTH = "32768"
+# The Dot's prompt and the web pages it reads are large. The engine reads the window Ollama loads the model
+# with, so this is the only place to change it. Flash attention and an 8-bit KV cache halve the memory it takes.
+foreach ($pair in @(@("OLLAMA_CONTEXT_LENGTH", $context), @("OLLAMA_FLASH_ATTENTION", "1"), @("OLLAMA_KV_CACHE_TYPE", "q8_0"))) {
+  [Environment]::SetEnvironmentVariable($pair[0], $pair[1], "User")
+  Set-Item -Path "Env:$($pair[0])" -Value $pair[1]
+}
 
-Write-Host "Restarting Ollama with a 32k context..."
+Write-Host "Restarting Ollama with a $context-token context..."
 Get-Process -Name "ollama*" -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Sleep 2
 Start-Process -FilePath $ollama -ArgumentList "serve" -WindowStyle Hidden

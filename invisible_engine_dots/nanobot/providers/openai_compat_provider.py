@@ -844,6 +844,23 @@ class OpenAICompatProvider(LLMProvider):
     # Public API
     # ------------------------------------------------------------------
 
+    async def _local_limits(self, model: str) -> ModelLimits:
+        """LOCAL MODEL (fork patch): the window Ollama loaded `model` with, as its /api/ps reports it."""
+        import httpx
+
+        root = (self._effective_base or "").rstrip("/").removesuffix("/v1")
+        async with httpx.AsyncClient(base_url=root, timeout=300) as client:
+            for attempt in range(2):
+                loaded = (await client.get("/api/ps")).json().get("models") or []
+                for entry in loaded:
+                    window = int(entry.get("context_length") or 0)
+                    if model in (entry.get("name"), entry.get("model")) and window > 0:
+                        return ModelLimits(context_tokens=window, answer_tokens=4096)
+                if attempt == 0:
+                    # Not loaded yet: an empty prompt loads the model without generating anything.
+                    await client.post("/api/generate", json={"model": model, "prompt": "", "keep_alive": "30m"})
+        raise LookupError(f"the local server did not load the model {model}")
+
     async def model_limits(self, model: str) -> ModelLimits:
         """The limits `model` has now (``GET /models/{model}/endpoints``), read again on every call.
 
@@ -858,10 +875,10 @@ class OpenAICompatProvider(LLMProvider):
         the model per request has no providers listed, so its limits are unknown and its requests go anywhere. A
         model OpenRouter does not know is an error: a request for it would fail too.
         """
-        # LOCAL MODEL (fork patch): a local server (Ollama) has no /models/{id}/endpoints listing; its window is the
-        # one Ollama is started with (OLLAMA_CONTEXT_LENGTH, set by local-model.ps1 to the same 32768).
+        # LOCAL MODEL (fork patch): a local server (Ollama) has no /models/{id}/endpoints listing; the window is the
+        # one Ollama actually loaded the model with (OLLAMA_CONTEXT_LENGTH, set by local-model.ps1).
         if self._is_local:
-            return ModelLimits(context_tokens=32768, answer_tokens=4096)
+            return await self._local_limits(model)
         client = await self._ensure_client()
         try:
             listing = cast(dict[str, Any], await client.get(f"/models/{model}/endpoints", cast_to=object))
